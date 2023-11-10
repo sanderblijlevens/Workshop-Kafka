@@ -1,0 +1,144 @@
+version: '3.1'
+
+services:
+  zk1:
+    image: confluentinc/cp-zookeeper
+    container_name: zk1
+    environment:
+      ZOOKEEPER_SERVER_ID: 1
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOO_SERVERS: 0.0.0.0:2181
+    ports:
+      - "21811:2181"
+
+  kafka-1:
+    image: confluentinc/cp-kafka
+    container_name: kafka-1
+    ports:
+      - "9094:9094"
+    depends_on:
+      - zk1
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zk1:2181'
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,OUTSIDE://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:9092,OUTSIDE://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_NUM_PARTITIONS: 10
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      JMX_PORT: 1099
+
+  kafka-2:
+    image: confluentinc/cp-kafka
+    container_name: kafka-2
+    ports:
+      - "9095:9094"
+    depends_on:
+      - zk1
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: 'zk1:2181'
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,OUTSIDE://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:9092,OUTSIDE://localhost:9095
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_NUM_PARTITIONS: 10
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      JMX_PORT: 1099
+
+  kafka-3:
+    image: confluentinc/cp-kafka
+    container_name: kafka-3
+    ports:
+      - "9096:9094"
+    depends_on:
+      - zk1
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_ZOOKEEPER_CONNECT: 'zk1:2181'
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,OUTSIDE://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:9092,OUTSIDE://localhost:9096
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_NUM_PARTITIONS: 10
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      JMX_PORT: 1099
+
+  cjib:
+    build:
+      context: ./cjib
+    environment:
+      - APP_PORT=3000
+      - KAFKA_BROKERS=kafka-1:9092,kafka-2:9092,kafka-3:9092
+      - KAFKA_TOPIC=anpr-topic
+      - KAFKA_CONSUMER_GROUP=cjib
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    deploy:
+      replicas: 2
+
+  police:
+    build:
+      context: ./police
+    environment:
+      - APP_PORT=3000
+      - KAFKA_BROKERS=kafka-1:9092,kafka-2:9092,kafka-3:9092
+      - KAFKA_TOPIC=anpr-topic
+      - KAFKA_CONSUMER_GROUP=police
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+    deploy:
+      replicas: 2
+
+  camera-1:
+    container_name: camera-1
+    build:
+      context: ./camera
+    ports:
+      - 3001:3000
+    environment:
+      - APP_PORT=3000
+      - KAFKA_BROKERS=kafka-1:9092,kafka-2:9092,kafka-3:9092
+      - KAFKA_TOPIC=anpr-topic
+      - KAFKAJS_NO_PARTITIONER_WARNING=1
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+
+  camera-2:
+    container_name: camera-2
+    build:
+      context: ./camera
+    ports:
+      - 3002:3000
+    environment:
+      - APP_PORT=3000
+      - KAFKA_BROKERS=kafka-1:9092,kafka-2:9092,kafka-3:9092
+      - KAFKA_TOPIC=anpr-topic
+      - KAFKAJS_NO_PARTITIONER_WARNING=1
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+
+  akhq:
+    image: tchiotludo/akhq
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            docker-kafka-server:
+              properties:
+                bootstrap.servers: "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+    ports:
+      - 8080:8080
+    links:
+      - kafka-1
+      - kafka-2
+      - kafka-3
